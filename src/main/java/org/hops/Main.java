@@ -8,8 +8,15 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.security.UserGroupInformation;
 
+import org.apache.hadoop.io.IOUtils;
+
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
 public class Main {
@@ -51,6 +58,14 @@ public class Main {
             case "mkdir":
                 requireArg(args, 2, "mkdir <path>");
                 mkdirs(fs, args[1]);
+                break;
+            case "upload":
+                requireArg(args, 3, "upload <local-file> <hdfs-path>");
+                uploadFile(fs, args[1], args[2]);
+                break;
+            case "download":
+                requireArg(args, 3, "download <hdfs-path> <local-file>");
+                downloadFile(fs, args[1], args[2]);
                 break;
             case "put":
                 requireArg(args, 3, "put <content> <hdfs-path>");
@@ -95,6 +110,36 @@ public class Main {
         } else {
             System.err.println("Failed to create directory: " + path);
         }
+    }
+
+    private static void uploadFile(FileSystem fs, String localPathStr, String hdfsPathStr) throws Exception {
+        File localFile = new File(localPathStr);
+        if (!localFile.exists()) {
+            System.err.println("Local file does not exist: " + localPathStr);
+            return;
+        }
+        Path hdfsPath = new Path(hdfsPathStr);
+        try (InputStream in = new FileInputStream(localFile);
+             FSDataOutputStream out = fs.create(hdfsPath, true)) {
+            IOUtils.copyBytes(in, out, 4096);
+        }
+        System.out.println("Uploaded " + localPathStr + " -> " + hdfsPathStr
+                + " (" + localFile.length() + " bytes)");
+    }
+
+    private static void downloadFile(FileSystem fs, String hdfsPathStr, String localPathStr) throws Exception {
+        Path hdfsPath = new Path(hdfsPathStr);
+        if (!fs.exists(hdfsPath)) {
+            System.err.println("HDFS file does not exist: " + hdfsPathStr);
+            return;
+        }
+        try (FSDataInputStream in = fs.open(hdfsPath);
+             OutputStream out = new FileOutputStream(localPathStr)) {
+            IOUtils.copyBytes(in, out, 4096);
+        }
+        long size = new File(localPathStr).length();
+        System.out.println("Downloaded " + hdfsPathStr + " -> " + localPathStr
+                + " (" + size + " bytes)");
     }
 
     private static void writeFile(FileSystem fs, String hdfsPathStr, String content) throws Exception {
@@ -147,8 +192,10 @@ public class Main {
         System.out.println("Commands:");
         System.out.println("  ls [path]              - List directory (default: /)");
         System.out.println("  mkdir <path>           - Create directory");
-        System.out.println("  put <content> <path>   - Write text content to a file");
-        System.out.println("  cat <path>             - Read a file");
-        System.out.println("  rm <path>              - Delete a file or directory");
+        System.out.println("  upload <local> <hdfs>   - Upload a local file to HDFS");
+        System.out.println("  download <hdfs> <local> - Download an HDFS file to local");
+        System.out.println("  put <content> <path>    - Write text content to a file");
+        System.out.println("  cat <path>              - Read a file");
+        System.out.println("  rm <path>               - Delete a file or directory");
     }
 }
